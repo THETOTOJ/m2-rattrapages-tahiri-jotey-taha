@@ -94,7 +94,8 @@ export default function Login() {
       return;
     }
 
-    const { data, error: signUpError } = await supabase.auth.signUp({
+    // Step 1: Sign up the user (but don't sign them in yet)
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -103,40 +104,59 @@ export default function Login() {
       },
     });
 
-    if (signUpError || !data.user) {
+    if (signUpError || !signUpData.user) {
       setError(signUpError?.message || "Signup failed");
       return;
     }
 
+    // Step 2: Handle profile picture upload if provided
     let profile_picture: string | null = null;
     if (file) {
       const fileExt = file.name.split(".").pop();
-      const filePath = `${data.user.id}/avatar.${fileExt}`;
+      const filePath = `${signUpData.user.id}/avatar.${fileExt}`;
+      
+      // Sign in temporarily to upload the file
+      const { error: tempSignInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      
+      if (tempSignInError) {
+        setError("Failed to authenticate for file upload");
+        return;
+      }
+
       const { data: imgData, error: imgError } = await supabase.storage
         .from("profile_pics")
         .upload(filePath, file, { upsert: true });
 
       if (imgError) {
-        setError(imgError.message);
-      } else {
-        const {
-          data: { publicUrl },
-        } = supabase.storage.from("profile_pics").getPublicUrl(imgData.path);
-        profile_picture = publicUrl;
+        // Sign out if file upload fails
+        await supabase.auth.signOut();
+        setError(`File upload failed: ${imgError.message}`);
+        return;
+      }
+
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("profile_pics").getPublicUrl(imgData.path);
+      profile_picture = publicUrl;
+    } else {
+      // If no file, we still need to sign in to create the profile
+      const { error: tempSignInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      
+      if (tempSignInError) {
+        setError("Failed to authenticate for profile creation");
+        return;
       }
     }
 
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    if (signInError) {
-      setError(signInError.message);
-      return;
-    }
-
+    // Step 3: Create the user profile in the database
     const { error: profileError } = await supabase.from("users").insert({
-      id: data.user.id,
+      id: signUpData.user.id,
       email,
       username,
       profile_picture,
@@ -144,11 +164,14 @@ export default function Login() {
     });
 
     if (profileError) {
-      setError(profileError.message);
+      // Sign out the user if profile creation fails
+      await supabase.auth.signOut();
+      setError(`Profile creation failed: ${profileError.message}`);
       return;
     }
 
-    setSuccess("Account created! Check your email to confirm.");
+    // Step 4: Success - user is already signed in and profile is created
+    setSuccess("Account created successfully! Check your email to confirm.");
     router.replace("/");
   }
 
@@ -272,7 +295,7 @@ export default function Login() {
       >
         {isRegister
           ? "Already have an account? Log in"
-          : "Don’t have an account? Register"}
+          : "Don't have an account? Register"}
       </button>
 
       {!isRegister && (
