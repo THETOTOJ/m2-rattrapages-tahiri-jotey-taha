@@ -1,8 +1,10 @@
 "use client";
 import { supabase } from "@/lib/supabaseClient";
-import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 
 export default function Login() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -17,6 +19,16 @@ export default function Login() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    const checkUser = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) router.replace("/"); 
+    };
+    checkUser();
+  }, [router]);
 
   function validatePassword(pw: string) {
     const regex =
@@ -34,13 +46,14 @@ export default function Login() {
     });
 
     if (error) {
-      if (error.message.includes("Invalid login credentials")) {
-        setError("Wrong email or password");
-      } else {
-        setError(error.message);
-      }
+      setError(
+        error.message.includes("Invalid login credentials")
+          ? "Wrong email or password"
+          : error.message
+      );
     } else {
       setSuccess("Logged in successfully!");
+      router.replace("/");
     }
   }
 
@@ -66,25 +79,22 @@ export default function Login() {
       setError("Username is required");
       return;
     }
-
     if (!validatePassword(password)) {
       setError(
         "Password must be at least 8 characters, include one uppercase letter, one number, and one special character."
       );
       return;
     }
-
     if (password !== confirmPassword) {
       setError("Passwords do not match");
       return;
     }
-
     if (file && file.size > 2 * 1024 * 1024) {
       setError("Profile picture must be under 2MB");
       return;
     }
 
-    const { data, error } = await supabase.auth.signUp({
+    const { data, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -93,22 +103,15 @@ export default function Login() {
       },
     });
 
-    if (error) {
-      setError(error.message);
-      return;
-    }
-
-    if (!data.user) {
-      setError("Signup failed");
+    if (signUpError || !data.user) {
+      setError(signUpError?.message || "Signup failed");
       return;
     }
 
     let profile_picture: string | null = null;
-
     if (file) {
       const fileExt = file.name.split(".").pop();
       const filePath = `${data.user.id}/avatar.${fileExt}`;
-
       const { data: imgData, error: imgError } = await supabase.storage
         .from("profile_pics")
         .upload(filePath, file, { upsert: true });
@@ -119,37 +122,21 @@ export default function Login() {
         const {
           data: { publicUrl },
         } = supabase.storage.from("profile_pics").getPublicUrl(imgData.path);
-
         profile_picture = publicUrl;
       }
-    }
-
-    const { data: signUpData, error: signUpError } = await supabase.auth.signUp(
-      {
-        email,
-        password,
-        options: {
-          data: { username },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
-      }
-    );
-
-    if (signUpError) {
-      return;
     }
 
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
-
     if (signInError) {
+      setError(signInError.message);
       return;
     }
 
     const { error: profileError } = await supabase.from("users").insert({
-      id: signUpData.user?.id,
+      id: data.user.id,
       email,
       username,
       profile_picture,
@@ -158,19 +145,17 @@ export default function Login() {
 
     if (profileError) {
       setError(profileError.message);
-    } else {
-      setSuccess("Account created! Check your email to confirm.");
+      return;
     }
+
+    setSuccess("Account created! Check your email to confirm.");
+    router.replace("/");
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] || null;
     setFile(file);
-    if (file) {
-      setPreview(URL.createObjectURL(file));
-    } else {
-      setPreview(null);
-    }
+    setPreview(file ? URL.createObjectURL(file) : null);
   }
 
   return (
@@ -256,7 +241,6 @@ export default function Login() {
             value={username}
             onChange={(e) => setUsername(e.target.value)}
           />
-
           <textarea
             placeholder="Bio (optional)"
             className="border rounded px-3 py-2 resize-none"
@@ -305,7 +289,6 @@ export default function Login() {
           {error}
         </div>
       )}
-
       {success && (
         <div className="bg-green-100 text-green-700 border border-green-300 px-3 py-2 rounded mt-2 text-sm">
           {success}
