@@ -124,8 +124,32 @@ export default function Login() {
       }
     }
 
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp(
+      {
+        email,
+        password,
+        options: {
+          data: { username },
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
+      }
+    );
+
+    if (signUpError) {
+      return;
+    }
+
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (signInError) {
+      return;
+    }
+
     const { error: profileError } = await supabase.from("users").insert({
-      id: data.user.id,
+      id: signUpData.user?.id,
       email,
       username,
       profile_picture,
