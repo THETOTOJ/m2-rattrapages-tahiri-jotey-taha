@@ -89,6 +89,7 @@ export default function Login() {
       password,
       options: {
         data: { username },
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     });
 
@@ -109,17 +110,21 @@ export default function Login() {
       const filePath = `${data.user.id}/avatar.${fileExt}`;
 
       const { data: imgData, error: imgError } = await supabase.storage
-        .from("profile_picture")
+        .from("profile_pics")
         .upload(filePath, file, { upsert: true });
 
       if (imgError) {
         setError(imgError.message);
       } else {
-        profile_picture = imgData.path;
+        const {
+          data: { publicUrl },
+        } = supabase.storage.from("profile_pics").getPublicUrl(imgData.path);
+
+        profile_picture = publicUrl;
       }
     }
 
-    const { error: profileError } = await supabase.from("users").upsert({
+    const { error: profileError } = await supabase.from("users").insert({
       id: data.user.id,
       email,
       username,
