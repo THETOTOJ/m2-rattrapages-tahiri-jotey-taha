@@ -1,6 +1,6 @@
 "use client";
-import { useState, useRef } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { useRef, useState } from "react";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -84,7 +84,6 @@ export default function Login() {
       return;
     }
 
-    // create user
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -120,7 +119,7 @@ export default function Login() {
       }
     }
 
-    const { error: profileError } = await supabase.from("users").insert({
+    const { error: profileError } = await supabase.from("users").upsert({
       id: data.user.id,
       email,
       username,
