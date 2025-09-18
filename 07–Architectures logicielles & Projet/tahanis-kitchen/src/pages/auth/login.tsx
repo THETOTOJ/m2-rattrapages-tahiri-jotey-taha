@@ -9,9 +9,6 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [username, setUsername] = useState("");
-  const [bio, setBio] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isRegister, setIsRegister] = useState(false);
@@ -89,13 +86,8 @@ export default function Login() {
       setError("Passwords do not match");
       return;
     }
-    if (file && file.size > 2 * 1024 * 1024) {
-      setError("Profile picture must be under 2MB");
-      return;
-    }
 
     try {
-      // Step 1: Sign up the user
       const { data: signUpData, error: signUpError } =
         await supabase.auth.signUp({
           email,
@@ -111,7 +103,6 @@ export default function Login() {
         return;
       }
 
-      // Step 2: Sign in the user to get proper session
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -122,35 +113,12 @@ export default function Login() {
         return;
       }
 
-      // Step 3: Handle profile picture upload if provided
-      let profile_picture: string | null = null;
-      if (file) {
-        const fileExt = file.name.split(".").pop();
-        const filePath = `${signUpData.user.id}/avatar.${fileExt}`;
-
-        const { data: imgData, error: imgError } = await supabase.storage
-          .from("profile_pics")
-          .upload(filePath, file, { upsert: true });
-
-        if (imgError) {
-          console.error("File upload error:", imgError);
-          // Continue without profile picture instead of failing
-          console.log("Continuing without profile picture...");
-        } else {
-          const {
-            data: { publicUrl },
-          } = supabase.storage.from("profile_pics").getPublicUrl(imgData.path);
-          profile_picture = publicUrl;
-        }
-      }
-
-      // Step 4: Create the user profile in the database
       const { error: profileError } = await supabase.from("users").insert({
         id: signUpData.user.id,
         email,
         username,
-        profile_picture,
-        bio,
+        profile_picture: null,
+        bio: null,
       });
 
       if (profileError) {
@@ -159,19 +127,12 @@ export default function Login() {
         return;
       }
 
-      // Success!
-      setSuccess("Account created successfully! Check your email to confirm.");
-      router.replace("/");
+      setSuccess("Account created! Complete your profile...");
+      router.replace("/profile/setup");
     } catch (error) {
       console.error("Unexpected error during signup:", error);
       setError("An unexpected error occurred. Please try again.");
     }
-  }
-
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0] || null;
-    setFile(file);
-    setPreview(file ? URL.createObjectURL(file) : null);
   }
 
   return (
@@ -179,32 +140,6 @@ export default function Login() {
       <h1 className="text-2xl font-bold text-rose-800 mb-2 text-center">
         {isRegister ? "Register" : "Login"}
       </h1>
-
-      {isRegister && (
-        <div className="flex justify-center mb-2">
-          <div
-            className="w-24 h-24 rounded-full border-2 border-dashed border-rose-400 flex items-center justify-center cursor-pointer overflow-hidden bg-white hover:bg-rose-100 transition"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            {preview ? (
-              <img
-                src={preview}
-                alt="Profile Preview"
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <span className="text-3xl text-rose-400">+</span>
-            )}
-          </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleFileChange}
-          />
-        </div>
-      )}
 
       <input
         type="email"
@@ -256,12 +191,6 @@ export default function Login() {
             className="border rounded px-3 py-2"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-          />
-          <textarea
-            placeholder="Bio (optional)"
-            className="border rounded px-3 py-2 resize-none"
-            value={bio}
-            onChange={(e) => setBio(e.target.value)}
           />
         </>
       )}
